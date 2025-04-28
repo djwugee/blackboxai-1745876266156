@@ -1,0 +1,11 @@
+MainParams {
+  display: flex
+
+  div + button {
+    margin-left: 5px
+  }
+
+  div {
+    flex: 1
+  }
+}
