@@ -1,0 +1,11 @@
+GlobalControllerNode {
+  $node
+
+  border-color: #222
+  border-width: 2px
+
+  header {
+    padding: 5px 3px;
+    background-color: #333;
+  }
+}
