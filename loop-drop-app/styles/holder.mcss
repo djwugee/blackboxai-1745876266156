@@ -1,0 +1,147 @@
+Holder {
+  display: flex
+  height: 100%;
+
+  div.side {
+
+    display: flex
+    flex-direction: column
+    width: 250px
+    flex-shrink: 0
+
+    div.transport {
+      border-radius 3px
+      background: #555
+      margin: 4px
+      div {
+        margin:6px
+      }
+    }
+
+    div.browser {
+      display: flex;
+      flex-direction: column;
+      flex: 1
+
+
+      div {
+        -recordings {
+          flex: 0.7 0 0
+        }
+
+        display: flex
+        flex-direction: column
+        min-height: 0
+
+        header {
+          font-size: 130%;
+          color: #FFF;
+          margin-bottom: 5px;
+          display: flex
+          flex-shrink: 0
+
+          span {
+            flex: 1
+          }
+
+          button.record {
+            margin-top: -2px
+            border: #4A4A4A 1px solid
+
+            :after {
+              background: #AEAEAE;
+              border-radius: 4px;
+              width: 8px;
+              height: 8px;
+              margin-top: -1px;
+            }
+
+            :focus {
+              box-shadow: rgb(232, 109, 101) 0 0 2px;
+            }
+
+            :hover {
+              border-color: #BD8489;
+              color: #FFEEEE;
+            }
+
+            -active {
+              background: #573236;
+              border-color: #BD8489;
+
+              :after {
+                background: #D18282;
+              }
+            }
+
+          }
+
+          button.new {
+            margin-top: -2px
+            border: 1px solid #494949;
+            background: #6F6F6F;
+            color: #D8D8D8;
+            cursor: pointer
+
+            :hover {
+              border: 1px solid #5A5;
+              background: #393;
+              color: #FFF;
+              box-shadow: 0px 0px 5px #3A3;
+            }
+          }
+        }
+
+        div {
+          overflow-y: auto
+          flex: 1
+        }
+
+        flex: 1 0 0
+        margin: 4px
+        background: #555
+        padding: 10px
+      }
+    }
+
+    div.controllers {
+      margin: 0 5px
+      margin-top: 0
+
+      div {
+        margin: 5px 0
+      }
+
+      div.spawn {
+        select {
+          width: 100%
+        }
+      }
+    }
+  }
+
+
+  div.main {
+    flex: 1
+    display: flex
+    flex-direction: row
+
+    div {
+      width: 0
+      flex: 1
+      margin: 4px
+    }
+  }
+}
+
+@-webkit-keyframes redPulse {
+  from { background-color: #926363;}
+  50% { background-color: #E28383; }
+  to { background-color: #A26363; }
+}
+
+@-webkit-keyframes redBorderPulse {
+  from { border-color: #926363;}
+  50% { border-color: #E28383; }
+  to { border-color: #A26363; }
+}
