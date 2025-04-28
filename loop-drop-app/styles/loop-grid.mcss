@@ -1,0 +1,159 @@
+LoopGrid {
+  position: relative
+  background: #444
+  flex-wrap: wrap
+  margin: 5px
+
+  -min {
+    div.row {
+      div.button {
+        border: none
+      }
+    }
+    div.chunk {
+      span {
+        display: none
+      }
+    }
+  }
+
+  div.rows {
+    transform: translate3d(0,0,0)
+    div.row {
+      display: flex
+      height: 30px
+      div.button {
+        background: #565656
+        flex: 1
+        border: 3px solid #444
+        box-shadow: inset 0px 0px 1px #0D0D0D;
+
+        -dragOver {
+          background: #2D2C2C
+          box-shadow: inset 0px 0px 6px #2D2F2C;
+        }
+
+        -present {
+          background: #2D2C2C
+        }
+
+        -recording {
+          box-shadow: inset 0px 0px 3px red;
+        }
+
+        -active {
+          box-shadow: inset 0px 0px 10px #21E22B;
+        }
+
+        -playing {
+          background: gold
+          box-shadow: inset 0px 0px 6px white;
+
+        }
+
+        -selected {
+          background: #63C763
+        }
+
+      }
+    }
+  }
+
+  div.chunks {
+    position: absolute
+    top: 0; right: 0; left: 0; bottom: 0
+    transform: translate3d(0,0,0)
+    pointer-events: none
+
+    div.chunk {
+      pointer-events: auto
+      border: 1px solid #378
+      border-radius: 3px
+      display: table-cell;
+      position: absolute;
+      padding: 3px
+      opacity: 0.4
+      cursor: pointer
+
+      -selected {
+        opacity: 1 !important
+        border-width: 2px
+        cursor: default
+      }
+
+      button.remove {
+        border-radius: 7px;
+        position: absolute;
+        top: -3px;
+        right: -3px;
+        visibility: hidden;
+        font-size: 10px;
+        padding: 1px 3px;
+        border: 1px solid silver;
+        background: #333;
+        color: silver;
+        box-shadow: 0 0 4px black;
+        z-index: 1
+
+        :hover {
+          background: #A00
+          color: white
+        }
+      }
+
+      :hover {
+        z-index: 1
+        opacity: 0.7
+        button.remove {
+          visibility: visible;
+        }
+      }
+
+      div.handle {
+        position: absolute
+
+        :hover {
+          background: rgba(255,255,255, 0.1)
+        }
+
+        -move {
+          left: 10px
+          right: 10px
+          top: 10px
+          bottom: 10px
+          cursor: handle
+        }
+        -top {
+          left:0
+          right:0
+          top:-3px
+          height: 5px
+          cursor: row-resize
+        }
+        -bottom {
+          left:0
+          right:0
+          bottom:-3px
+          height: 8px
+          cursor: row-resize
+        }
+        -left {
+          left:-3px
+          top:0
+          bottom:0
+          width: 8px
+          cursor: col-resize
+        }
+        -right {
+          right:-3px
+          top:0
+          bottom:0
+          width: 8px
+          cursor: col-resize
+        }
+      }
+    }
+  }
+
+
+}
