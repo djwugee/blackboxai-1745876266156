@@ -1,0 +1,50 @@
+ControllerNode {
+  position: relative
+  margin-top: 6px
+  background: #464545;
+  border: 1px #444 solid;
+  color: #EEE;
+  border-radius: 4px;
+  width: 260px;
+  overflow: hidden
+
+  header {
+    display: flex
+    padding: 5px 5px
+
+    span {
+      flex: 1
+    }
+
+    button.remove {
+      opacity: 0.2
+      margin: -1px 0
+    }
+
+    :hover {
+      button.remove {
+        opacity: 1
+      }
+    }
+  }
+
+  -input {
+    border-color: #6D9466
+    header {
+      background-color: #4B5645
+    }
+  }
+
+  section {
+
+    display: flex
+    flex-direction: column
+
+    div.controls {
+      flex: 1
+    }
+    
+  }
+
+  
+}
