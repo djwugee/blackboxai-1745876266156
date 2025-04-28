@@ -1,0 +1,38 @@
+Helper {
+  padding: 5px
+  color: #777
+  text-align: center
+  font-size: 120%
+
+  -webkit-user-select: text
+  cursor: text
+
+  -warning {
+    header {
+      color: #E09A2C
+    }
+    color: #CCC
+  }
+
+  header {
+    font-size: 150%
+  }
+
+  a {
+    color: #5A91D8
+
+
+    img {
+      transition: -webkit-filter, opacity, 1s ease
+      -webkit-filter: saturate(5%)
+      opacity: 0.3
+    }
+
+    :hover {
+      img {
+        -webkit-filter: saturate(100%)
+        opacity: 1
+      }
+    }
+  }
+}
