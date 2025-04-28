@@ -1,0 +1,516 @@
+var LoopGrid = require('../loop-grid/object')
+var computedRecording = require('../loop-grid/recording')
+var Looper = require('../loop-grid/looper')
+var computeTargets = require('../loop-grid/compute-targets')
+var computeFlags = require('../loop-grid/compute-flags')
+var holdActive = require('lib/hold-active-transform')
+var computeActiveIndexes = require('lib/active-indexes')
+
+var Selector = require('../loop-grid/selector')
+var Holder = require('../loop-grid/holder')
+var Mover = require('../loop-grid/mover')
+var Repeater = require('../loop-grid/repeater')
+var Suppressor = require('../loop-grid/suppressor')
+
+var Dict = require('mutant/dict')
+var ObservStruct = require('mutant/struct')
+var ObservMidi = require('observ-midi')
+var ObservGridStack = require('observ-grid-stack')
+var GrabGrid = require('lib/grab-grid')
+var MidiPort = require('lib/midi-port')
+var MidiButtons = require('observ-midi/light-stack')
+var watchButtons = require('lib/watch-buttons')
+var quantizeDuration = require('lib/quantize-duration')
+var quantizeToSquare = require('lib/quantize-to-square')
+
+var Observ = require('mutant/value')
+var ArrayGrid = require('array-grid')
+
+var DittyGridStream = require('lib/ditty-grid-stream')
+
+var computed = require('mutant/computed')
+var watch = require('mutant/watch')
+var mapWatchDiff = require('lib/map-watch-diff-stack')
+var mapGridValue = require('observ-grid/map-values')
+var computeIndexesWhereContains = require('observ-grid/indexes-where-contains')
+var getPortSiblings = require('lib/get-port-siblings')
+
+var stateLights = require('./state-lights.js')
+var repeatStates = [2, 1, 2 / 3, 1 / 2, 1 / 3, 1 / 4, 1 / 6, 1 / 8]
+
+module.exports = function (context) {
+  var loopGrid = LoopGrid(context)
+  var looper = Looper(loopGrid)
+  var recordingLoop = Observ()
+  var recording = computedRecording(loopGrid, recordingLoop)
+
+  var scheduler = context.scheduler
+  var gridMapping = getLaunchpadGridMapping()
+  loopGrid.shape.set(gridMapping.shape)
+
+  var shiftHeld = false
+  var activatedAt = 0
+  var releases = []
+
+  var midiPort = MidiPort(context, function (port, lastPort) {
+    // turn off on switch
+    lastPort && lastPort.write([176, 0, 0])
+    if (port) {
+      port.write([176, 0, 0])
+      activatedAt = Date.now()
+    }
+  })
+
+  // extend loop-grid instance
+  var obs = ObservStruct({
+    port: midiPort,
+    loopLength: loopGrid.loopLength,
+    chunkPositions: Dict({})
+  })
+
+  obs.gridState = ObservStruct({
+    active: loopGrid.active,
+    playing: loopGrid.playing,
+    recording: recording,
+    triggers: loopGrid.grid
+  })
+
+  obs.activeInput = computed([midiPort.stream], function (value) {
+    return !!value
+  })
+
+  releases.push(
+    watch(looper, loopGrid.loops.set)
+  )
+
+  obs.context = context
+  obs.playback = loopGrid
+  obs.looper = looper
+  obs.repeatLength = Observ(2)
+  obs.recordingLoop = recordingLoop
+
+  var repeatOffbeat = Observ(false)
+  var flags = computeFlags(context.chunkLookup, obs.chunkPositions, loopGrid.shape)
+
+  watch( // compute targets from chunks
+    computeTargets(context.chunkLookup, obs.chunkPositions, loopGrid.shape),
+    loopGrid.targets.set
+  )
+
+  // grab the midi for the current port
+  obs.grabInput = function () {
+    midiPort.grab()
+  }
+
+  // loop transforms
+  var transforms = {
+    selector: Selector(gridMapping.shape, gridMapping.stride),
+    holder: Holder(looper.transform),
+    mover: Mover(looper.transform),
+    repeater: Repeater(looper.transformTop),
+    suppressor: Suppressor(looper.transform, gridMapping.shape, gridMapping.stride)
+  }
+
+  var outputLayers = ObservGridStack([
+
+    // recording
+    mapGridValue(recording, stateLights.redLow),
+
+    // active
+    mapGridValue(loopGrid.active, stateLights.greenLow),
+
+    // flash selected chunk
+    mapGridValue(Highlighting(loopGrid.grid, context.setup.selectedChunkId), stateLights.amberLow),
+
+    // selected
+    mapGridValue(transforms.selector, stateLights.green),
+
+    // suppressing
+    mapGridValue(transforms.suppressor, stateLights.red),
+
+    // playing
+    mapGridValue(loopGrid.playing, stateLights.amber)
+
+  ])
+
+  var controllerGrid = ObservMidi(midiPort.stream, gridMapping, outputLayers)
+  var inputGrabber = GrabGrid(controllerGrid)
+
+  var noRepeat = computeIndexesWhereContains(flags, 'noRepeat')
+  var freezeSuppress = computeIndexesWhereContains(flags, 'freezeSuppress')
+
+  var grabInputExcludeNoRepeat = function (listener) {
+    return inputGrabber(listener, { exclude: noRepeat })
+  }
+
+  var inputGrid = Observ()
+  watch(inputGrabber, inputGrid.set)
+  var activeIndexes = computeActiveIndexes(inputGrid)
+
+  // trigger notes at bottom of input stack
+  var output = DittyGridStream(inputGrid, loopGrid.grid, context.scheduler)
+  output.on('data', loopGrid.triggerEvent)
+
+  obs.currentlyPressed = computed([controllerGrid, loopGrid.grid], function (value, grid) {
+    return grid.data.filter(function (name, index) {
+      if (value.data[index]) {
+        return true
+      }
+    })
+  })
+
+  // midi button mapping
+  var buttons = MidiButtons(midiPort.stream, {
+    store: '176/104',
+    flatten: '176/105',
+    undo: '176/106',
+    redo: '176/107',
+    hold: '176/108',
+    suppress: '176/109',
+    swapTarget: '176/110',
+    select: '176/111'
+  })
+
+  var releaseLoopLengthLights = []
+  var ignoreStoreUp = false
+
+  // store loop when end time is reached
+  releases.push(
+    context.scheduler.onSchedule(schedule => {
+      if (Array.isArray(obs.recordingLoop()) && obs.recordingLoop()[1]) {
+        var scheduleLength = schedule.to - schedule.from
+        var from = obs.recordingLoop()[0]
+        var duration = obs.recordingLoop()[1]
+        var to = from + duration
+        var remaining = to - schedule.to
+
+        if (remaining <= scheduleLength) {
+          looper.store(from - remaining + duration, duration)
+          buttons.store.flash(stateLights.green)
+          obs.recordingLoop.set(null)
+        }
+      }
+    })
+  )
+
+  watchButtons(buttons, {
+    store: function (value) {
+      // ignore an up press if we are holding the store
+      if (!value && ignoreStoreUp) {
+        ignoreStoreUp = false
+        return
+      }
+
+      if (!shiftHeld && Array.isArray(obs.recordingLoop()) && scheduler.getCurrentPosition() - obs.recordingLoop()[0] > 0.9) {
+        // button up or down, when active recording
+        // loop the duration of recording
+
+        var duration = scheduler.getCurrentPosition() - obs.recordingLoop()[0]
+        obs.loopLength.set(quantizeDuration(duration))
+        looper.store()
+        this.flash(stateLights.red)
+
+        // stop recording
+        obs.recordingLoop.set(null)
+      } else if (value) { // BUTTON DOWN -----
+        if (shiftHeld) {
+          // start recording from next % 4 beats quantized (ignore the up)
+          ignoreStoreUp = true
+
+          // calculate quantized loop recorder start
+          var currentPosition = scheduler.getCurrentPosition()
+          var startPosition = Math.floor(currentPosition + 1.7)
+
+          obs.recordingLoop.set([startPosition, obs.loopLength()])
+        } else {
+          // lets assume we're recording a loop, but if the duration is too short, we'll loop the last x bars
+          obs.recordingLoop.set([scheduler.getCurrentPosition()])
+        }
+      } else { // BUTTON UP ----
+        // record key was pressed quickly, just loop the last `loopLength`
+
+        if (obs.recordingLoop()) {
+          looper.store(obs.recordingLoop()[0])
+          obs.recordingLoop.set(null)
+        }
+
+        this.flash(stateLights.green)
+      }
+    },
+
+    flatten: function (value) {
+      if (value) {
+        if (buttons.store()) {
+          // store is held, lock in the recording
+          ignoreStoreUp = true
+        } else if (obs.recordingLoop()) {
+          // cancel recording if pressed
+          obs.recordingLoop.set(null)
+        } else {
+          var active = activeIndexes()
+          if (looper.isTransforming() || active.length) {
+            looper.transform(holdActive, active)
+            looper.flatten()
+            transforms.selector.stop()
+            this.flash(stateLights.green, 100)
+          } else {
+            this.flash(stateLights.red, 100)
+            transforms.suppressor.start(scheduler.getCurrentPosition(), transforms.selector.selectedIndexes())
+            looper.flatten()
+            transforms.suppressor.stop()
+            transforms.selector.stop()
+          }
+        }
+      }
+    },
+
+    undo: function (value) {
+      if (value) {
+        if (shiftHeld) { // halve loopLength
+          var current = obs.loopLength() || 1
+          if (current > 1 / 8) {
+            obs.loopLength.set(quantizeToSquare(current / 2))
+            this.flash(stateLights.green, 100)
+          }
+        } else {
+          looper.undo()
+          this.flash(stateLights.red, 100)
+          buttons.store.flash(stateLights.red)
+        }
+      }
+    },
+
+    redo: function (value) {
+      if (value) {
+        if (shiftHeld) { // double loopLength
+          var current = (obs.loopLength() || 1)
+          if (current < 64) {
+            obs.loopLength.set(quantizeToSquare(current) * 2)
+            this.flash(stateLights.green, 100)
+          }
+        } else {
+          looper.redo()
+          this.flash(stateLights.red, 100)
+          buttons.store.flash(stateLights.red)
+        }
+      }
+    },
+
+    hold: function (value) {
+      if (value) {
+        var turnOffLight = this.light(stateLights.yellow)
+        transforms.holder.start(
+          scheduler.getCurrentPosition(),
+          transforms.selector.selectedIndexes(),
+          turnOffLight
+        )
+      } else {
+        transforms.holder.stop()
+      }
+    },
+
+    suppress: function (value) {
+      if (value) {
+        var turnOffLight = this.light(stateLights.red)
+        transforms.suppressor.start(scheduler.getCurrentPosition(), transforms.selector.selectedIndexes(), freezeSuppress(), turnOffLight)
+      } else {
+        transforms.suppressor.stop()
+      }
+    },
+
+    swapTarget: function (value) {
+      if (value) {
+        getPortSiblings(obs, context.setup.controllers)[1].grabInput()
+      } else if (Date.now() - activatedAt > 500) {
+        getPortSiblings(obs, context.setup.controllers)[0].grabInput()
+      }
+    },
+
+    select: function (value) {
+      if (value) {
+        var turnOffLight = this.light(stateLights.green)
+        transforms.selector.start(inputGrabber, function done () {
+          transforms.mover.stop()
+          transforms.selector.clear()
+          turnOffLight()
+        })
+      } else {
+        if (transforms.selector.selectedIndexes().length) {
+          transforms.mover.start(inputGrabber, transforms.selector.selectedIndexes())
+        } else {
+          transforms.selector.stop()
+        }
+      }
+    }
+  })
+
+  // shift button (share select button)
+  watch(buttons.select, function (value) {
+    if (value) {
+      shiftHeld = true
+
+      // turn on loop length lights
+      releaseLoopLengthLights.push(
+        buttons.undo.light(stateLights.greenLow),
+        buttons.redo.light(stateLights.greenLow)
+      )
+    } else {
+      shiftHeld = false
+
+      // turn off loop length lights
+      while (releaseLoopLengthLights.length) {
+        releaseLoopLengthLights.pop()()
+      }
+    }
+  })
+
+  // light up undo buttons by default
+  buttons.undo.light(stateLights.redLow)
+  buttons.redo.light(stateLights.redLow)
+
+  buttons.store.light(stateLights.amberLow)
+
+  var releaseRecordingLight = null
+  watch(obs.recordingLoop, (value) => {
+    releaseRecordingLight && releaseRecordingLight()
+    releaseRecordingLight = null
+    if (value != null) {
+      releaseRecordingLight = buttons.store.light(stateLights.red)
+    }
+  })
+
+  var willFlatten = computed([activeIndexes, looper.transforms, buttons.store], function (indexes, transforms, storeHeld) {
+    return !!indexes.length || !!transforms.length || !!storeHeld
+  })
+
+  // light up store button when transforming (flatten mode)
+  var releaseFlattenLight = null
+  watch(willFlatten, function (value) {
+    if (value && !releaseFlattenLight) {
+      releaseFlattenLight = buttons.flatten.light(stateLights.greenLow)
+    } else if (!value && releaseFlattenLight) {
+      releaseFlattenLight()
+      releaseFlattenLight = null
+    }
+  })
+
+  var repeatButtonOutput = computed([loopGrid.loopPosition, obs.repeatLength, repeatOffbeat, obs.recordingLoop], (loopPosition, repeatLength, repeatOffbeat, recordingLoop) => {
+    var result = {}
+    var repeatIndex = repeatStates.indexOf(repeatLength)
+    var currentBeat = Math.floor(loopPosition[0])
+
+    if (Array.isArray(recordingLoop)) {
+      var pos = scheduler.getCurrentPosition() - recordingLoop[0]
+      var duration = recordingLoop[1] ? recordingLoop[1] : 32
+      for (let i = 0; i < 8; i++) {
+        if (pos < 0) {
+          // counting down to record
+          if (i >= Math.floor(8 + pos * 4)) {
+            result[i] = stateLights.yellow
+          }
+        } else {
+          var currentIndex = Math.floor(pos / duration * 8)
+          if (currentIndex === i && loopPosition[0] >= currentBeat && loopPosition[0] < currentBeat + 0.1) {
+            // flash light on beat
+            result[i] = stateLights.red
+          } else if ((pos > 0 && currentIndex >= i) || (pos < 0 && currentIndex <= i)) {
+            result[i] = stateLights.redLow
+          } else if (repeatIndex === i) {
+            result[i] = stateLights.amberLow
+          }
+        }
+      }
+    } else {
+      var beatIndex = Math.floor(loopPosition[0] / loopPosition[1] * 8)
+      for (let i = 0; i < 8; i++) {
+        if (beatIndex === i && loopPosition[0] >= currentBeat && loopPosition[0] < currentBeat + 0.1) {
+          // flash light on beat
+          result[i] = stateLights.green
+        } else if (repeatIndex === i) {
+          result[i] = repeatOffbeat ? stateLights.redLow : stateLights.amberLow
+        } else if (beatIndex === i) {
+          result[i] = stateLights.greenLow
+        }
+      }
+    }
+    return result
+  })
+
+  var repeatButtons = ObservMidi(midiPort.stream, {
+    0: '144/8',
+    1: '144/24',
+    2: '144/40',
+    3: '144/56',
+    4: '144/72',
+    5: '144/88',
+    6: '144/104',
+    7: '144/120'
+  }, repeatButtonOutput)
+
+  // repeater
+  mapWatchDiff(repeatStates, repeatButtons, obs.repeatLength.set)
+  watch(obs.repeatLength, function (value) {
+    transforms.holder.setLength(value)
+    if (value < 2 || shiftHeld) {
+      repeatOffbeat.set(shiftHeld)
+      transforms.repeater.start(grabInputExcludeNoRepeat, value, shiftHeld)
+    } else {
+      transforms.repeater.stop()
+    }
+  })
+
+  // cleanup / disconnect from keyboard on destroy
+  obs.destroy = function () {
+    recording.destroy()
+    midiPort.destroy()
+    output.destroy()
+    loopGrid.destroy()
+    looper.destroy()
+    while (releases.length) {
+      releases.pop()()
+    }
+  }
+
+  return obs
+}
+
+function getLaunchpadGridMapping () {
+  var result = []
+  for (var r = 0; r < 8; r++) {
+    for (var c = 0; c < 8; c++) {
+      var noteId = (r * 16) + (c % 8)
+      result.push('144/' + noteId)
+    }
+  }
+  return ArrayGrid(result, [8, 8])
+}
+
+function Highlighting (grid, selected) {
+  var highlighted = Observ()
+  var timer = null
+
+  highlighted.clear = function () {
+    highlighted.set(null)
+  }
+
+  selected(function (id) {
+    clearTimeout(timer)
+    highlighted.set(id)
+    timer = setTimeout(highlighted.clear, 400)
+  })
+
+  return computed([grid, highlighted], function (grid, highlighted) {
+    return ArrayGrid(grid.data.map(function (val) {
+      var id = getChunkId(val)
+      if (id === highlighted) {
+        return true
+      }
+    }), grid.shape)
+  })
+}
+
+function getChunkId (id) {
+  if (id && id.split) {
+    return id.split('/')[0]
+  }
+}
