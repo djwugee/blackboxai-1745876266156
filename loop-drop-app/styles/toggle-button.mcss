@@ -1,0 +1,79 @@
+ToggleButton {
+  text-decoration: none;
+  font-size: 90%;
+  padding: 2px 5px;
+  border-radius: 4px;
+  display: inline-block;
+  border: #949a94 1px solid;
+  background: #6F6F6F;
+  color: #D0D0D0;
+  cursor: pointer;
+
+  -main {
+    border-radius: 0
+    padding: 5px 7px
+    font-size: 110%
+    display: block
+
+    :after {
+      border-radius: 4px;
+      width: 8px;
+      height: 8px;
+    }
+  }
+
+  -active {
+    background: #325736;
+    :after {
+      background: #82D182;
+    }
+  }
+
+  -record {
+    border: #888888 1px solid
+
+    :after {
+      background: #AEAEAE;
+    }
+
+    :focus {
+      box-shadow: rgb(232, 109, 101) 0 0 2px;
+    }
+
+    :hover {
+      border-color: #BD8489;
+      color: #FFEEEE;
+    }
+
+    -active {
+      background: #573236;
+
+      :after {
+        background: #D18282;
+      }
+    }
+  }
+
+  :focus {
+    outline-style: none;
+    color: white;
+    box-shadow: rgb(109, 232, 101) 0 0 2px;
+  }
+
+  :hover {
+    border-color: #84BD89;
+    color: #D6FFC9;
+  }
+
+  :after {
+    display: inline-block;
+    border-radius: 3px;
+    width: 6px;
+    height: 6px;
+    background: #AAA4A4;
+    content: '';
+    margin-left: 3px;
+    vertical-align: middle;
+    margin-bottom: 1px;
+  }
+}
