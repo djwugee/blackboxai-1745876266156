@@ -1,0 +1,46 @@
+Button {
+  cursor: pointer;
+  border: none;
+  border-radius: 5px;
+  font-size: 12px;
+  font-size: 10px;
+  padding: 0 4px;
+
+  background: #3A3A3A;
+  color: #C3C3C3;
+
+  :hover {
+    background: #202020;
+    color: #FFF;
+  }
+
+  :focus {
+    outline-style: none;
+    color: white;
+    box-shadow: white 0 0 4px;
+  }
+
+  -main {
+    padding: 5px
+    height: auto
+  }
+
+  -spawn {
+    :hover {
+      background: #467545
+    }
+  }
+
+  -warn {
+    :hover {
+      background: #A00
+    }
+  }
+
+  -edit {
+    border: 1px solid #666;
+    padding: 0 6px;
+    background: #3A3A3A;
+    color: #DDD;
+  }
+}
