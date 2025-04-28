@@ -1,0 +1,81 @@
+ParamList {
+  margin: 5px
+  display: flex
+  flex-wrap: wrap
+
+  -compact {
+    margin: 0
+
+    button {
+      margin: 0
+    }
+
+    button + button {
+      margin-left: 4px
+    }
+
+  }
+
+  table {
+    (td.title){
+      width: 90%
+    }
+  }
+
+  select {
+    cursor: pointer
+    margin: 4px
+    -flex {
+      flex: 1
+    }
+  }
+
+  input {
+    [type='text'] {
+      flex: 1
+      flex-shrink: 0
+      margin: 4px
+    }
+  }
+
+  button {
+    margin: 4px
+    height: 18px
+  }
+
+  div {
+    div.title {
+      font-size: 80%
+      font-weight: bold
+      position: absolute
+      padding: 4px 0 0 2px
+      z-index: 1
+      opacity: 0.6
+      pointer-events: none
+    }
+
+    div.extTitle {
+      font-size: 80%
+      color: #AAA
+    }
+
+    margin: 4px;
+    display: flex
+
+    -block {
+      display: block
+      select {
+        margin: 0
+      }
+    }
+
+    -flex {
+      flex: 1 300px
+    }
+
+    -flexSmall {
+      flex: 1 100px
+    }
+
+  }
+}
